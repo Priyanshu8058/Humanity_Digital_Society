@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Bhopa's Ravanahatha: An Epic of Pabuji</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Tone.js for the Ravanahatha sound simulation (Phase 3) -->
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.7.58/build/Tone.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f3e8; /* Light traditional paper background */
+        }
+        
+        /* Custom Phad Styling - Bold lines, vibrant colors */
+        .phad-canvas {
+            border: 8px solid #a30000; /* Deep Red Border - Traditional Phad color */
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            background-color: #fff8e1; /* Off-white canvas tone */
+            position: relative;
+            cursor: default;
+        }
+
+        /* Styling for the Phad scene segments (using SVG/DIVs for flat, horror vacui style) */
+        .phad-segment {
+            transition: all 0.3s ease-in-out;
+            border: 2px solid #a30000; /* Bolder border for distinct scenes */
+            overflow: hidden; /* Ensure SVG stays contained */
+            box-sizing: border-box;
+        }
+        
+        /* Interactive Ritual Item Styling */
+        .ritual-item, .color-option {
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .ritual-item:hover, .color-option:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .ritual-placeholder {
+            border: 2px dashed #9d5a00; /* Brownish-Gold dashed border */
+            background-color: rgba(255, 255, 255, 0.5);
+            transition: background-color 0.3s;
+        }
+
+        .ritual-placeholder.occupied {
+            background-color: #c9e8c9; /* Light Green when occupied */
+            border-color: #166534;
+        }
+
+        /* Lamp Cursor for Phase 2 */
+        #lamp-cursor {
+            position: absolute;
+            width: 100px; /* Slightly larger lamp */
+            height: 100px;
+            background: radial-gradient(circle, rgba(255, 255, 100, 0.8) 0%, rgba(255, 255, 200, 0.4) 30%, rgba(255, 255, 255, 0) 70%);
+            pointer-events: none; /* Ignore mouse events */
+            border-radius: 50%;
+            opacity: 0; /* Hidden initially */
+            transition: opacity 0.5s;
+            z-index: 50; /* Ensure lamp is above segments */
+        }
+
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+            max-width: 90%;
+            text-align: center;
+        }
+
+        /* Phase 3 - Rhythm Game Styling */
+        .rhythm-lane {
+            width: 20%;
+            height: 100%;
+            background-color: #333;
+            border-left: 1px solid #555;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end; /* Keep key label at the bottom */
+        }
+        .note {
+            width: 80%;
+            height: 15px;
+            position: absolute;
+            left: 10%;
+            background-color: #f97316; /* Orange Note */
+            border-radius: 4px;
+            box-shadow: 0 0 5px #f97316;
+        }
+        .key-feedback {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0); /* Invisible default */
+            transition: background-color 0.1s;
+        }
+        .key-feedback.hit {
+            background-color: rgba(255, 255, 255, 0.5); /* Flash white on hit */
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8 flex justify-center items-center">
+
+    <!-- Game Container - ADDED TABINDEX="0" for keyboard focus -->
+    <div id="game-container" class="w-full max-w-5xl bg-white rounded-xl shadow-2xl p-6 md:p-10" tabindex="0">
+
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-red-800 text-center mb-6">The Bhopa's Ravanahatha</h1>
+        <p class="text-center text-gray-600 mb-8 max-w-2xl mx-auto">Assist the Bhopa and Bhopi in performing the sacred all-night scroll narration (*Phad Vachan*) of the Epic of Pabuji, ensuring every step of the ritual and art symbolism is correct.</p>
+
+        <!-- Dynamic Game Phase Content -->
+        <div id="game-content">
+            <!-- Content will be injected by JavaScript -->
+        </div>
+
+        <!-- Hidden Message Box (Custom Alert) -->
+        <div id="message-box" class="message-box bg-white hidden" role="dialog" aria-modal="true" aria-labelledby="message-title">
+            <h3 id="message-title" class="text-2xl font-bold text-gray-800 mb-4"></h3>
+            <p id="message-text" class="text-gray-700 mb-6"></p>
+            <button id="message-button" onclick="App.hideMessage()" class="px-6 py-2 bg-red-700 text-white font-semibold rounded-full hover:bg-red-800 transition shadow-lg">Continue</button>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Global State and Constants ---
+
+        const PHASES = {
+            RITUAL: 1,
+            ILLUMINATION: 2,
+            RHYTHM: 3,
+            SEQUENCE: 4,
+            END: 5
+        };
+
+        // Phad Color Iconography (Simplified for Game Logic)
+        const PHAD_COLORS = {
+            RED: { hex: '#a30000', name: 'Red (Pabuji/Royal)', meaning: 'Used for main deity figures and royal clothing, symbolizing valor and power.' },
+            ORANGE: { hex: '#ff7e00', name: 'Orange', meaning: 'Used for limbs and non-royal figures.' },
+            YELLOW: { hex: '#ffc107', name: 'Yellow', meaning: 'Used for outlines and ornaments.' },
+            BLACK: { hex: '#333333', name: 'Black (Kesar Kalami)', meaning: 'Used for Pabuji\'s magical horse, Kesar Kalami.' },
+            GREEN: { hex: '#166534', name: 'Green', meaning: 'Used for vegetation or secondary deities like Devnarayan.' }
+        };
+
+        const RITUAL_ITEMS = [
+            { id: 'lamp', name: 'Oil Lamp (Diya)', symbol: '💡', description: 'Used by the Bhopi to illuminate the scenes.' },
+            { id: 'conch', name: 'Conch Shell (Shankh)', symbol: '🐚', description: 'Blown to announce donations and sanctify the space.' },
+            { id: 'coconut', name: 'Coconut Offering', symbol: '🥥', description: 'A sacred offering used to begin the worship.' }
+        ];
+
+        // --- Tone.js/Audio Setup (Simplified Ravanahatha simulation) ---
+        let ravanahathaSynth;
+        const initRavanahatha = () => {
+            if (ravanahathaSynth) return;
+            // Simple monophonic synth to mimic a string sound
+            ravanahathaSynth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "square" },
+                envelope: {
+                    attack: 0.005,
+                    decay: 0.1,
+                    sustain: 0.3,
+                    release: 0.02
+                },
+                volume: -10
+            }).toDestination();
+        };
+
+        const playNote = (note = "C4", duration = "8n") => {
+             // Tone.start() ensures audio context is running (required after user gesture)
+            Tone.start();
+            if (!ravanahathaSynth) initRavanahatha();
+            ravanahathaSynth.triggerAttackRelease(note, duration);
+        }
+        
+        // --- Game Logic Object ---
+
+        const App = {
+            currentPhase: PHASES.RITUAL,
+            ritualState: {
+                lamp: false,
+                conch: false,
+                coconut: false,
+                eyesPainted: false,
+                correctEyeColor: null // Pabuji's main color is RED
+            },
+            
+            init() {
+                this.loadContent();
+                // Initialize Ravanahatha synth silently
+                initRavanahatha(); 
+            },
+
+            loadContent() {
+                const container = document.getElementById('game-content');
+                container.innerHTML = ''; // Clear existing content
+
+                switch (this.currentPhase) {
+                    case PHASES.RITUAL:
+                        container.innerHTML = this.renderPhase1Ritual();
+                        break;
+                    case PHASES.ILLUMINATION:
+                        container.innerHTML = this.renderPhase2Illumination();
+                        this.setupPhase2();
+                        break;
+                    case PHASES.RHYTHM:
+                        container.innerHTML = this.renderPhase3Rhythm();
+                        this.setupPhase3();
+                        break;
+                    case PHASES.SEQUENCE:
+                        container.innerHTML = this.renderPhase4Sequence();
+                        this.setupPhase4();
+                        break;
+                    case PHASES.END:
+                        container.innerHTML = this.renderEndScreen();
+                        break;
+                }
+            },
+
+            // --- Phase 1: Ritual & Color Puzzle (Canvas Activation) ---
+
+            renderPhase1Ritual() {
+                const isComplete = Object.values(this.ritualState).every(v => v);
+
+                return `
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-6 text-center">Phase 1: Canvas Activation - The Mobile Temple</h2>
+                    <div class="flex flex-col lg:flex-row gap-8">
+                        
+                        <!-- Ritual Items Sidebar (The Bhopa's Task) -->
+                        <div class="lg:w-1/3 bg-gray-50 p-4 rounded-lg shadow-inner">
+                            <h3 class="text-xl font-bold text-green-700 mb-4">Step 1: Place Ritual Offerings</h3>
+                            <div id="ritual-items-list" class="grid grid-cols-3 gap-3">
+                                ${RITUAL_ITEMS.map(item => `
+                                    <div id="item-${item.id}" onclick="App.selectItem('${item.id}')" 
+                                         class="ritual-item flex flex-col items-center justify-center p-3 rounded-lg bg-orange-100 border border-orange-400 
+                                         ${this.ritualState[item.id] ? 'opacity-30 pointer-events-none' : ''}">
+                                        <span class="text-3xl">${item.symbol}</span>
+                                        <span class="text-xs text-center mt-1 font-medium">${item.name}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <p class="text-sm mt-4 text-gray-500">Click the items and then click the empty placeholders on the canvas.</p>
+                            <h3 class="text-xl font-bold text-green-700 mt-6 mb-4">Step 2: Paint Pabuji's Eyes (The Bhopi's Task)</h3>
+                            <p class="text-sm mb-3">Pabuji wears Red in the Phad. Choose the correct color to "bring the deity to life."</p>
+                            <div id="color-options" class="flex justify-around gap-2">
+                                ${Object.keys(PHAD_COLORS).map(key => {
+                                    if (key === 'BLACK' || key === 'GREEN') return ''; // Only show ritualistic colors
+                                    const color = PHAD_COLORS[key];
+                                    const isSelected = this.ritualState.correctEyeColor === key;
+                                    return `
+                                        <div onclick="App.paintEyes('${key}')" 
+                                            class="color-option w-16 h-16 rounded-full border-4 ${isSelected ? 'border-yellow-500 ring-4 ring-yellow-300' : 'border-gray-200'}" 
+                                            style="background-color: ${color.hex};" 
+                                            title="${color.name}">
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                            ${this.ritualState.eyesPainted ? '<p class="mt-4 text-sm text-green-600 font-semibold">Eyes Painted: The Phad is now a living temple!</p>' : ''}
+                            
+                            <button onclick="App.nextPhase()" ${isComplete ? '' : 'disabled'}
+                                class="w-full mt-8 px-6 py-3 bg-red-600 text-white font-bold rounded-xl shadow-md disabled:opacity-50 hover:bg-red-700 transition">
+                                Begin Performance (Phase 2)
+                            </button>
+                        </div>
+                        
+                        <!-- Phad Canvas Section -->
+                        <div id="phad-canvas-area" class="lg:w-2/3 phad-canvas rounded-lg p-6 flex flex-col items-center justify-between min-h-[400px]">
+                            <h3 class="text-2xl font-bold text-red-800 border-b-2 border-red-800 pb-2">Pabuji Ki Phad - Ritual Setup</h3>
+                            
+                            <!-- Ritual Placeholders -->
+                            <div class="flex justify-around w-full max-w-sm mt-4">
+                                ${RITUAL_ITEMS.map(item => `
+                                    <div id="placeholder-${item.id}" onclick="App.placeItem('${item.id}')" 
+                                         class="ritual-placeholder w-20 h-20 rounded-lg flex items-center justify-center text-xs text-gray-700 p-2 
+                                         ${this.ritualState[item.id] ? 'occupied' : ''}">
+                                        ${this.ritualState[item.id] ? item.symbol : 'Place ' + item.name}
+                                    </div>
+                                `).join('')}
+                            </div>
+                            
+                            <!-- Pabuji Figure (Simplified SVG/Div) -->
+                            <div class="my-6 relative">
+                                <svg width="200" height="250" viewBox="0 0 200 250" class="shadow-xl" xmlns="http://www.w3.org/2000/svg">
+                                    <!-- Pabuji's Body - Largest figure = highest status (Horror Vacui Style) -->
+                                    <rect x="50" y="50" width="100" height="150" fill="${PHAD_COLORS.RED.hex}" stroke="black" stroke-width="2"/>
+                                    <!-- Pabuji's Head/Turban -->
+                                    <rect x="70" y="30" width="60" height="30" fill="${PHAD_COLORS.YELLOW.hex}" stroke="black" stroke-width="2"/>
+                                    <!-- Pabuji's Face (Profile) -->
+                                    <circle cx="100" cy="80" r="15" fill="${PHAD_COLORS.ORANGE.hex}" stroke="black" stroke-width="2"/>
+                                    
+                                    <!-- Horse (Kesar Kalami - Black Mare) -->
+                                    <rect x="20" y="180" width="160" height="40" fill="${PHAD_COLORS.BLACK.hex}" stroke="black" stroke-width="2"/>
+                                    
+                                    <!-- Eye Placeholder -->
+                                    <circle id="pabuji-eye" cx="100" cy="80" r="5" fill="white" stroke="black" stroke-width="1"/>
+                                </svg>
+                                <p class="text-sm font-bold text-center mt-2 text-red-800">Pabuji (The Deity)</p>
+                            </div>
+                            
+                            <p class="text-sm text-center text-gray-500">The Phad is prepared for the all-night recital.</p>
+                        </div>
+                    </div>
+                `;
+            },
+
+            selectedItem: null,
+
+            selectItem(itemId) {
+                if (this.ritualState[itemId]) return; // Already placed
+                this.selectedItem = itemId;
+                // Simple feedback: highlight the selected item
+                document.querySelectorAll('.ritual-item').forEach(el => el.classList.remove('ring-4', 'ring-blue-300'));
+                document.getElementById(`item-${itemId}`).classList.add('ring-4', 'ring-blue-300');
+                playNote("C5"); // Confirmation sound
+            },
+
+            placeItem(itemId) { // FIX: Changed argument name to itemId (e.g., 'lamp')
+                const placeholderId = 'placeholder-' + itemId; // Correctly construct the placeholder ID
+                const placeholderElement = document.getElementById(placeholderId);
+                const itemData = RITUAL_ITEMS.find(i => i.id === itemId);
+
+                if (!placeholderElement) {
+                    console.error('Placeholder element not found:', placeholderId);
+                    return;
+                }
+
+                // Check if the item is already placed or if the wrong item is selected.
+                if (this.ritualState[itemId] || !this.selectedItem || this.selectedItem !== itemId) {
+                    this.showMessage("Ritual Error", "Either this item is already placed, or you selected the wrong placeholder for the current item.", "Try Again");
+                    playNote("G3");
+                    return;
+                }
+
+                this.ritualState[itemId] = true;
+                this.selectedItem = null;
+                playNote("E5"); // Success sound
+
+                // Update UI elements using the correctly fetched element
+                placeholderElement.classList.add('occupied'); 
+                placeholderElement.innerHTML = itemData.symbol; // Use itemData to get the symbol
+                
+                // Update the item list element (the button that was clicked to select the item)
+                const itemElement = document.getElementById(`item-${itemId}`);
+                if (itemElement) {
+                    itemElement.classList.add('opacity-30', 'pointer-events-none');
+                    itemElement.classList.remove('ring-4', 'ring-blue-300');
+                }
+                
+                // Check for completion to enable the next phase button
+                this.updateRitualCompletion();
+            },
+
+            paintEyes(colorKey) {
+                const targetColor = PHAD_COLORS.RED.hex;
+                const selectedColor = PHAD_COLORS[colorKey].hex;
+                const pabujiEye = document.getElementById('pabuji-eye');
+
+                if (!this.ritualState.eyesPainted) {
+                    // Check if the correct color (Red for Pabuji) is chosen
+                    if (selectedColor === targetColor) {
+                        pabujiEye.setAttribute('fill', selectedColor);
+                        this.ritualState.eyesPainted = true;
+                        this.ritualState.correctEyeColor = colorKey;
+                        this.showMessage("Success!", "The final brushstroke is applied! Pabuji is now a living presence in the scroll.", "Continue");
+                        playNote("C6");
+                    } else {
+                        pabujiEye.setAttribute('fill', selectedColor);
+                        this.showMessage("Incorrect Color", `You chose ${PHAD_COLORS[colorKey].name}. In Phad tradition, the largest deity figure (Pabuji) should be defined by his core color, ${PHAD_COLORS.RED.name}. Try again!`, "Continue");
+                        playNote("A3");
+                    }
+                }
+                this.updateRitualCompletion();
+                // Reload the content to update the color options highlighting
+                this.loadContent(); 
+            },
+
+            updateRitualCompletion() {
+                const isComplete = Object.values(this.ritualState).every(v => v);
+                // Check for the existence of the button before trying to enable it
+                const nextButton = document.querySelector('#game-content button:disabled');
+                if (isComplete && nextButton) {
+                    nextButton.disabled = false;
+                }
+            },
+
+            // --- SVG Generation for Phase 2 ---
+            getPhadIllustration(sceneId) {
+                // Generates flat, symbolic SVG based on Phad style
+                switch(sceneId) {
+                    case 'scene-1': // Target: Pabuji and Kesar Kalami (Black Horse, Red Attire)
+                        return `
+                            <svg viewBox="0 0 100 100" class="w-full h-full">
+                                <rect x="0" y="0" width="100" height="100" fill="${PHAD_COLORS.RED.hex}33" stroke-width="1" stroke="${PHAD_COLORS.RED.hex}"/>
+                                <!-- Pabuji Figure (Largest element in this segment) -->
+                                <rect x="10" y="5" width="30" height="60" fill="${PHAD_COLORS.RED.hex}" stroke="black" stroke-width="1.5"/>
+                                <!-- Kesar Kalami (Black Horse) -->
+                                <rect x="5" y="65" width="90" height="20" fill="${PHAD_COLORS.BLACK.hex}" stroke="black" stroke-width="1.5"/>
+                                <!-- Cow (Defending the herd) -->
+                                <circle cx="80" cy="70" r="5" fill="#ffffff" stroke="black"/>
+                                <text x="50" y="95" font-size="10" text-anchor="middle" fill="${PHAD_COLORS.RED.hex}">Pabuji's Battle</text>
+                            </svg>
+                        `;
+                    case 'scene-2': // Ganesha Invocation (Yellow/Orange)
+                        return `
+                            <svg viewBox="0 0 100 100" class="w-full h-full">
+                                <rect x="0" y="0" width="100" height="100" fill="${PHAD_COLORS.YELLOW.hex}33" stroke-width="1" stroke="${PHAD_COLORS.YELLOW.hex}"/>
+                                <!-- Ganesha (Symbolic, profile head) -->
+                                <circle cx="50" cy="40" r="25" fill="${PHAD_COLORS.ORANGE.hex}" stroke="black" stroke-width="1.5"/>
+                                <rect x="50" y="30" width="40" height="10" fill="${PHAD_COLORS.YELLOW.hex}"/>
+                                <text x="50" y="80" font-size="10" text-anchor="middle" fill="${PHAD_COLORS.YELLOW.hex}">Invocation Scene</text>
+                            </svg>
+                        `;
+                    case 'scene-3': // Devnarayanji (Green/Contrast)
+                         return `
+                            <svg viewBox="0 0 100 100" class="w-full h-full">
+                                <rect x="0" y="0" width="100" height="100" fill="${PHAD_COLORS.GREEN.hex}33" stroke-width="1" stroke="${PHAD_COLORS.GREEN.hex}"/>
+                                <!-- Devnarayan (Smaller scale, green theme) -->
+                                <rect x="50" y="30" width="20" height="40" fill="${PHAD_COLORS.GREEN.hex}" stroke="black" stroke-width="1.5"/>
+                                <!-- White Horse (Contrast to Pabuji's black) -->
+                                <rect x="20" y="70" width="60" height="15" fill="#ffffff" stroke="black" stroke-width="1.5"/>
+                                <text x="50" y="95" font-size="10" text-anchor="middle" fill="${PHAD_COLORS.GREEN.hex}">Devnarayan Segment</text>
+                            </svg>
+                        `;
+                    case 'scene-4': // Courtly Life (Orange figures, dense style)
+                         return `
+                            <svg viewBox="0 0 100 100" class="w-full h-full">
+                                <rect x="0" y="0" width="100" height="100" fill="${PHAD_COLORS.ORANGE.hex}33" stroke-width="1" stroke="${PHAD_COLORS.ORANGE.hex}"/>
+                                <!-- Multiple small figures (dense style) -->
+                                <rect x="5" y="10" width="25" height="40" fill="${PHAD_COLORS.ORANGE.hex}"/>
+                                <rect x="35" y="40" width="25" height="40" fill="${PHAD_COLORS.ORANGE.hex}"/>
+                                <rect x="65" y="10" width="25" height="40" fill="${PHAD_COLORS.ORANGE.hex}"/>
+                                <text x="50" y="95" font-size="10" text-anchor="middle" fill="${PHAD_COLORS.ORANGE.hex}">Courtly Gathering</text>
+                            </svg>
+                        `;
+                    default:
+                        return `<div class="p-2 text-center text-red-500">Error: Missing Scene</div>`;
+                }
+            },
+
+            // --- Phase 2: Illumination of the Scene (Symbolism & Navigation) ---
+            
+            renderPhase2Illumination() {
+                // Simplified Phad layout for illumination puzzle (Horror Vacui simulation)
+                // Scene 1 (Pabuji on Kesar Kalami, black horse) is the target.
+                const phadScenes = [
+                    { id: 'scene-1', narrative: "Pabuji rides his black mare, Kesar Kalami, towards the battlefield to defend the cows.", correct: true, top: '10%', left: '5%', width: '45%', height: '35%' }, // Largest/Most prominent
+                    { id: 'scene-2', narrative: "Ganesha is invoked at the start of the performance.", correct: false, top: '5%', left: '70%', width: '25%', height: '25%' }, // Smaller ritual scene
+                    { id: 'scene-3', narrative: "Devnarayanji, the other deity, stands with his green banner.", correct: false, top: '65%', left: '5%', width: '35%', height: '30%' }, // Medium scale
+                    { id: 'scene-4', narrative: "A scene of courtly life and discussions.", correct: false, top: '40%', left: '35%', width: '55%', height: '55%' }, // Very dense, overlapping with others
+                ];
+
+                return `
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-6 text-center">Phase 2: Illumination - The Bhopi's Task</h2>
+                    <p class="text-lg font-medium text-gray-800 mb-4 text-center">
+                        The Bhopa is singing: <span id="narration-text" class="text-red-700 font-bold">"Pabuji rides his black mare, Kesar Kalami, towards the battlefield to defend the cows."</span>
+                    </p>
+                    <p class="text-sm text-gray-500 mb-4 text-center">
+                        **TASK:** As the Bhopi, move the lamp cursor (simulated by your mouse/finger) over the scene that corresponds to the narrative (Look for the **Red** hero on the **Black** horse).
+                    </p>
+                    
+                    <!-- Phad Canvas for Illumination -->
+                    <div id="illumination-canvas" class="phad-canvas w-full aspect-[2/1] relative overflow-hidden p-2" 
+                         onmousemove="App.moveLamp(event)" 
+                         ontouchmove="App.moveLamp(event, true)">
+                        <div id="lamp-cursor" class="opacity-0"></div>
+                        
+                        <!-- Simulated Horror Vacui Scenes (Non-linear composition) -->
+                        ${phadScenes.map(scene => `
+                            <div id="${scene.id}" data-correct="${scene.correct}" 
+                                 style="position: absolute; width: ${scene.width}; height: ${scene.height}; top: ${scene.top}; left: ${scene.left};"
+                                 class="phad-segment bg-white/70 backdrop-blur-sm rounded-lg shadow-inner z-10">
+                                ${this.getPhadIllustration(scene.id)}
+                            </div>
+                        `).join('')}
+                         <!-- Background texture for empty space -->
+                         <div class="absolute inset-0 z-0 opacity-50" style="background-image: repeating-linear-gradient(45deg, ${PHAD_COLORS.ORANGE.hex}11, ${PHAD_COLORS.ORANGE.hex}11 10px, ${PHAD_COLORS.YELLOW.hex}11 10px, ${PHAD_COLORS.YELLOW.hex}11 20px);"></div>
+
+
+                    </div>
+                    <button onclick="App.nextPhase()" id="phase2-button" disabled
+                        class="w-full mt-8 px-6 py-3 bg-red-600 text-white font-bold rounded-xl shadow-md disabled:opacity-50 hover:bg-red-700 transition">
+                        Next Phase (Ravanahatha Rhythm)
+                    </button>
+                `;
+            },
+
+            setupPhase2() {
+                const canvas = document.getElementById('illumination-canvas');
+                const lamp = document.getElementById('lamp-cursor');
+                lamp.style.opacity = 1;
+
+                // Event listener for a "click" or "tap" to select the illuminated scene
+                canvas.onclick = (e) => this.checkIllumination(e);
+            },
+
+            moveLamp(event, isTouch = false) {
+                const lamp = document.getElementById('lamp-cursor');
+                const canvas = document.getElementById('illumination-canvas');
+                const rect = canvas.getBoundingClientRect();
+                
+                let clientX, clientY;
+
+                if (isTouch) {
+                    clientX = event.touches[0].clientX;
+                    clientY = event.touches[0].clientY;
+                } else {
+                    clientX = event.clientX;
+                    clientY = event.clientY;
+                }
+
+                // Calculate position relative to the canvas
+                const x = clientX - rect.left - lamp.offsetWidth / 2;
+                const y = clientY - rect.top - lamp.offsetHeight / 2;
+
+                lamp.style.transform = `translate(${x}px, ${y}px)`;
+            },
+
+            checkIllumination(event) {
+                const target = event.target.closest('.phad-segment');
+                const nextButton = document.getElementById('phase2-button');
+
+                if (target && target.dataset.correct === 'true') {
+                    // Correct scene illuminated!
+                    target.classList.add('ring-8', 'ring-green-400', 'bg-green-100');
+                    target.classList.remove('bg-white/70');
+                    nextButton.disabled = false;
+                    this.showMessage("Perfect Illumination!", "The Bhopi successfully highlighted the Kesar Kalami scene, teaching the audience the non-linear reading of the Phad.", "Continue to Phase 3");
+                    playNote("F5");
+                    // Disable further clicks
+                    document.getElementById('illumination-canvas').onclick = null;
+                } else if (target) {
+                    // Incorrect scene
+                    target.classList.add('ring-8', 'ring-red-400');
+                    setTimeout(() => target.classList.remove('ring-8', 'ring-red-400'), 500);
+                    this.showMessage("Incorrect Scene", "The narrative is about Pabuji and his black horse, not the other deities. Try illuminating the correct symbolic panel!", "Try Again");
+                    playNote("D4");
+                }
+            },
+
+            // --- Phase 3: Ravanahatha Rhythm (Musical Performance) ---
+
+            renderPhase3Rhythm() {
+                return `
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-6 text-center">Phase 3: Ravanahatha Rhythm - The Bhopa's Music</h2>
+                    <p class="text-lg font-medium text-gray-800 mb-4 text-center">
+                        **TASK:** Accompany the heroic narrative with the Ravanahatha. Press the keys (A, S, D, F) when the notes hit the target line (or use the buttons below on touch devices).
+                    </p>
+                    <div class="flex justify-center">
+                        <div id="rhythm-game" class="w-full max-w-xl h-96 border-4 border-gray-900 bg-gray-900 rounded-lg shadow-xl relative overflow-hidden">
+                            <!-- Lanes and Target Line -->
+                            <div class="flex h-full" id="lanes-container">
+                                <div class="rhythm-lane" data-key="A">
+                                    <div class="key-feedback" id="feedback-A"></div>
+                                    <div class="absolute bottom-0 w-full text-center text-white p-2 bg-gray-700 hidden lg:block">A</div>
+                                </div>
+                                <div class="rhythm-lane" data-key="S">
+                                    <div class="key-feedback" id="feedback-S"></div>
+                                    <div class="absolute bottom-0 w-full text-center text-white p-2 bg-gray-700 hidden lg:block">S</div>
+                                </div>
+                                <div class="rhythm-lane" data-key="D">
+                                    <div class="key-feedback" id="feedback-D"></div>
+                                    <div class="absolute bottom-0 w-full text-center text-white p-2 bg-gray-700 hidden lg:block">D</div>
+                                </div>
+                                <div class="rhythm-lane" data-key="F">
+                                    <div class="key-feedback" id="feedback-F"></div>
+                                    <div class="absolute bottom-0 w-full text-center text-white p-2 bg-gray-700 hidden lg:block">F</div>
+                                </div>
+                            </div>
+                            <!-- Target line -->
+                            <div class="absolute top-[80%] w-full h-1 bg-red-500 border-y-2 border-red-800 pointer-events-none"></div>
+                        </div>
+                    </div>
+                    
+                    <div id="rhythm-score" class="text-center mt-4 text-xl font-bold text-gray-700">Score: 0 | Hits: 0 / Misses: 0</div>
+                    
+                    <!-- Virtual Rhythm Buttons for Mobile/Touch Devices -->
+                    <div id="virtual-buttons" class="grid grid-cols-4 gap-2 mt-4 lg:hidden">
+                        <button onclick="App.handleRhythmInput('A')" class="virtual-key-btn text-2xl font-bold p-4 rounded-xl bg-blue-500 text-white shadow-lg active:bg-blue-700 transition">A</button>
+                        <button onclick="App.handleRhythmInput('S')" class="virtual-key-btn text-2xl font-bold p-4 rounded-xl bg-blue-500 text-white shadow-lg active:bg-blue-700 transition">S</button>
+                        <button onclick="App.handleRhythmInput('D')" class="virtual-key-btn text-2xl font-bold p-4 rounded-xl bg-blue-500 text-white shadow-lg active:bg-blue-700 transition">D</button>
+                        <button onclick="App.handleRhythmInput('F')" class="virtual-key-btn text-2xl font-bold p-4 rounded-xl bg-blue-500 text-white shadow-lg active:bg-blue-700 transition">F</button>
+                    </div>
+
+                    <button onclick="App.nextPhase()" id="phase3-button" disabled
+                        class="w-full mt-8 px-6 py-3 bg-red-600 text-white font-bold rounded-xl shadow-md disabled:opacity-50 hover:bg-red-700 transition">
+                        Next Phase (Narrative Sequence)
+                    </button>
+                `;
+            },
+
+            // Simplified State for Phase 3
+            rhythmState: {
+                score: 0,
+                hits: 0,
+                misses: 0,
+                totalNotes: 0,
+                gameActive: false,
+                noteDropInterval: null,
+                handleKeyPress: null // Store reference to listener function
+            },
+
+            // New unified input handler for Phase 3 (called by keyboard listener or virtual buttons)
+            handleRhythmInput(key) {
+                if (!this.rhythmState.gameActive) return;
+
+                const keys = ['A', 'S', 'D', 'F'];
+                const notesMap = { 'A': 'C4', 'S': 'D4', 'D': 'E4', 'F': 'G4' };
+
+                const lane = document.querySelector(`.rhythm-lane[data-key="${key}"]`);
+                const note = lane.querySelector('.note');
+                const gameContainer = document.getElementById('rhythm-game');
+                const targetY = gameContainer.offsetHeight * 0.8; 
+                
+                // Visual feedback for input
+                const feedbackEl = document.getElementById(`feedback-${key}`);
+                if (feedbackEl) {
+                    feedbackEl.classList.add('hit');
+                    setTimeout(() => feedbackEl.classList.remove('hit'), 100);
+                }
+
+
+                if (note) {
+                    const noteRect = note.getBoundingClientRect();
+                    const laneRect = lane.getBoundingClientRect();
+                    // Calculate where the note is relative to the target line (80% of lane height)
+                    const noteBottom = noteRect.bottom - laneRect.top;
+                    
+                    // Check if the note is within the hit window (e.g., 70% to 90% of the lane height)
+                    if (noteBottom > targetY * 0.9 && noteBottom < targetY * 1.1) {
+                        // HIT!
+                        note.remove();
+                        this.rhythmState.hits++;
+                        this.rhythmState.score += 10;
+                        playNote(notesMap[key], "16n");
+                    } else {
+                        // EARLY/LATE HIT (Miss)
+                        this.rhythmState.misses++;
+                        this.rhythmState.score = Math.max(0, this.rhythmState.score - 5);
+                        playNote("A2"); // Low, missed note sound
+                    }
+                } else {
+                    // MISSED KEYPRESS (Penalty)
+                    this.rhythmState.score = Math.max(0, this.rhythmState.score - 1);
+                }
+                
+                const updateScoreboard = () => {
+                    document.getElementById('rhythm-score').textContent = `Score: ${this.rhythmState.score} | Hits: ${this.rhythmState.hits} / Misses: ${this.rhythmState.misses}`;
+                    
+                    // Win condition check (after a set number of notes)
+                    if (this.rhythmState.totalNotes >= 20) {
+                        this.stopPhase3();
+                        const accuracy = (this.rhythmState.hits / this.rhythmState.totalNotes) * 100;
+                        if (accuracy >= 80) {
+                             this.showMessage("Rhythmic Mastery!", `Accuracy: ${accuracy.toFixed(1)}%. You successfully accompanied the heroic tale!`, "Continue to Phase 4");
+                             document.getElementById('phase3-button').disabled = false;
+                        } else {
+                            this.showMessage("Off-Beat Performance", `Accuracy: ${accuracy.toFixed(1)}%. The Phad needs a stronger rhythm. Try again!`, "Restart Phase 3");
+                            document.getElementById('message-button').onclick = () => { this.loadContent(); this.hideMessage(); }; 
+                        }
+                    }
+                };
+                updateScoreboard();
+            },
+            
+            setupPhase3() {
+                const gameContainer = document.getElementById('rhythm-game');
+                const targetY = gameContainer.offsetHeight * 0.8; // Target line Y position
+                const mainContainer = document.getElementById('game-container'); 
+
+                this.rhythmState.score = 0;
+                this.rhythmState.hits = 0;
+                this.rhythmState.misses = 0;
+                this.rhythmState.totalNotes = 0;
+                this.rhythmState.gameActive = true;
+
+                if (this.rhythmState.stopPhase3) {
+                    this.rhythmState.stopPhase3();
+                }
+                
+                // Note Generation and Animation
+                const keys = ['A', 'S', 'D', 'F'];
+                const spawnNote = () => {
+                    if (!this.rhythmState.gameActive) return;
+
+                    const key = keys[Math.floor(Math.random() * keys.length)];
+                    const lane = document.querySelector(`.rhythm-lane[data-key="${key}"]`);
+                    const noteElement = document.createElement('div');
+                    noteElement.className = 'note';
+                    noteElement.dataset.key = key;
+                    noteElement.style.top = '0';
+                    lane.appendChild(noteElement);
+                    this.rhythmState.totalNotes++;
+                    
+                    let startTime = performance.now();
+                    const duration = 2000; // 2 seconds to reach the bottom
+                    
+                    const animate = (time) => {
+                        if (!this.rhythmState.gameActive) return;
+
+                        const elapsed = time - startTime;
+                        const progress = elapsed / duration;
+                        
+                        if (progress >= 1) {
+                            if (noteElement.parentNode) {
+                                noteElement.remove();
+                                this.rhythmState.misses++;
+                                this.handleRhythmInput(null); // Call input handler to update score/check win condition
+                            }
+                            return;
+                        }
+                        
+                        noteElement.style.top = (progress * 100) + '%';
+                        requestAnimationFrame(animate);
+                    };
+                    requestAnimationFrame(animate);
+                };
+
+                // Start spawning notes every 500ms
+                this.rhythmState.noteDropInterval = setInterval(spawnNote, 500);
+
+                // Input Check (Keyboard) - Calls the new unified handler
+                const handleKeyPress = (e) => {
+                    const key = e.key.toUpperCase();
+                    if (keys.includes(key)) {
+                        this.handleRhythmInput(key);
+                    }
+                };
+
+                this.rhythmState.handleKeyPress = handleKeyPress;
+                document.addEventListener('keydown', this.rhythmState.handleKeyPress);
+                
+                // FIX: Request focus on the main game container using a slight delay
+                // This is the most reliable way to force focus after content is rendered
+                if (mainContainer) {
+                    setTimeout(() => {
+                        mainContainer.focus();
+                        mainContainer.onclick = () => { mainContainer.focus(); mainContainer.onclick = null; }; // Fallback to focus on first click
+                    }, 100);
+                }
+                
+                // Cleanup function for Phase 3
+                this.stopPhase3 = () => {
+                    clearInterval(this.rhythmState.noteDropInterval);
+                    this.rhythmState.gameActive = false;
+                    if (this.rhythmState.handleKeyPress) {
+                        document.removeEventListener('keydown', this.rhythmState.handleKeyPress);
+                        this.rhythmState.handleKeyPress = null;
+                    }
+                    if (mainContainer) {
+                        mainContainer.onclick = null; // Remove the fallback click handler
+                    }
+                };
+            },
+
+
+            // --- Phase 4: Narrative Sequence (Logic & Story Reconstruction) ---
+
+            renderPhase4Sequence() {
+                const storySegments = [
+                    { id: 'segment-1', title: 'The Oath of Pabuji', text: 'Pabuji vows to protect the Deval charanís cows from the attack by Jinda Rao Khinchi.', correctOrder: 1 },
+                    { id: 'segment-2', title: 'The Battle and Sacrifice', text: 'Pabuji leaves his wedding mid-ceremony and rides to combat, sacrificing his life to defend the herd.', correctOrder: 2 },
+                    { id: 'segment-3', title: 'The Vengeance of Budhoji', text: 'Pabuji’s nephew, Budhoji, avenges the death of Pabuji by attacking Khinchi.', correctOrder: 3 },
+                ];
+                
+                // Shuffle segments for the puzzle
+                const shuffledSegments = storySegments.sort(() => Math.random() - 0.5);
+
+                return `
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-6 text-center">Phase 4: Narrative Sequence - Reconstructing the Epic</h2>
+                    <p class="text-lg font-medium text-gray-800 mb-4 text-center">
+                        **TASK:** The Bhopa and Bhopi must correctly sequence the final critical events of the Pabuji Epic. Drag the segments into the correct chronological order (1, 2, 3).
+                    </p>
+                    <div id="sequence-container" class="space-y-4 max-w-2xl mx-auto">
+                        <!-- Drop targets -->
+                        <div id="drop-target-1" class="drop-target bg-gray-100 p-4 rounded-lg border-2 border-gray-300 min-h-[80px]" data-order="1">Order 1: (Drop Segment Here)</div>
+                        <div id="drop-target-2" class="drop-target bg-gray-100 p-4 rounded-lg border-2 border-gray-300 min-h-[80px]" data-order="2">Order 2: (Drop Segment Here)</div>
+                        <div id="drop-target-3" class="drop-target bg-gray-100 p-4 rounded-lg border-2 border-gray-300 min-h-[80px]" data-order="3">Order 3: (Drop Segment Here)</div>
+                    </div>
+                    
+                    <div id="draggable-segments" class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+                        ${shuffledSegments.map(segment => `
+                            <div id="${segment.id}" data-order="${segment.correctOrder}" draggable="true" 
+                                 class="drag-segment bg-blue-100 p-4 rounded-lg border-2 border-blue-600 cursor-grab shadow-md hover:shadow-lg transition">
+                                <p class="font-bold text-blue-800">${segment.title}</p>
+                                <p class="text-sm text-gray-700 mt-1">${segment.text}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <button onclick="App.checkSequence()" id="phase4-button"
+                        class="w-full mt-8 px-6 py-3 bg-green-600 text-white font-bold rounded-xl shadow-md hover:bg-green-700 transition">
+                        Verify Final Epic Sequence
+                    </button>
+                `;
+            },
+            
+            setupPhase4() {
+                const dragSegments = document.querySelectorAll('.drag-segment');
+                const dropTargets = document.querySelectorAll('.drop-target');
+
+                let draggedElement = null;
+
+                // Drag Start
+                dragSegments.forEach(segment => {
+                    segment.addEventListener('dragstart', (e) => {
+                        draggedElement = segment;
+                        e.dataTransfer.setData('text/plain', segment.id);
+                        setTimeout(() => segment.classList.add('opacity-50'), 0);
+                    });
+                    segment.addEventListener('dragend', () => {
+                        draggedElement.classList.remove('opacity-50');
+                        draggedElement = null;
+                    });
+                });
+
+                // Drop Targets
+                dropTargets.forEach(target => {
+                    target.addEventListener('dragover', (e) => {
+                        e.preventDefault(); // Allows drop
+                        target.classList.add('border-green-500', 'bg-green-50');
+                    });
+                    target.addEventListener('dragleave', (e) => {
+                        target.classList.remove('border-green-500', 'bg-green-50');
+                    });
+                    target.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        target.classList.remove('border-green-500', 'bg-green-50');
+                        
+                        if (draggedElement) {
+                            // Check if target is already occupied
+                            if (target.querySelector('.drag-segment')) {
+                                // Move segment back to pool if target is occupied (simple swap logic omitted for brevity)
+                                return;
+                            }
+                            // Move segment from its current parent (if any)
+                            if (draggedElement.parentNode) {
+                                draggedElement.parentNode.removeChild(draggedElement);
+                            }
+                            
+                            // Place into target
+                            target.innerHTML = '';
+                            target.appendChild(draggedElement);
+                            target.classList.remove('bg-gray-100', 'border-gray-300'); // Clean up base styling
+                            target.classList.add('bg-blue-100', 'border-blue-600');
+                        }
+                    });
+                });
+            },
+            
+            resetPhase4() {
+                const dropTargets = document.querySelectorAll('.drop-target');
+                const draggableSegmentsContainer = document.getElementById('draggable-segments');
+                
+                // 1. Move all segments back to the main pool
+                dropTargets.forEach(target => {
+                    const segment = target.querySelector('.drag-segment');
+                    if (segment) {
+                        draggableSegmentsContainer.appendChild(segment);
+                    }
+                    // 2. Reset placeholder styling and text
+                    target.classList.remove('bg-green-200', 'bg-blue-100', 'border-blue-600');
+                    target.classList.add('bg-gray-100', 'border-gray-300');
+                    // Restore default text
+                    const order = target.dataset.order;
+                    target.innerHTML = `Order ${order}: (Drop Segment Here)`; 
+                });
+            },
+
+            checkSequence() {
+                const dropTargets = document.querySelectorAll('.drop-target');
+                let correctCount = 0;
+
+                dropTargets.forEach(target => {
+                    const segment = target.querySelector('.drag-segment');
+                    const requiredOrder = target.dataset.order;
+                    
+                    // Reset trial styling first
+                    target.classList.remove('bg-green-200');
+
+                    if (segment && segment.dataset.order === requiredOrder) {
+                        correctCount++;
+                        target.classList.add('bg-green-200');
+                    } 
+                });
+
+                if (correctCount === 3) {
+                    this.showMessage("The Epic is Complete!", "The final story panels are correctly sequenced, preserving the legend of Pabuji. The Arati is performed.", "View Results");
+                    document.getElementById('phase4-button').disabled = true;
+                    setTimeout(() => this.nextPhase(), 2000);
+                } else {
+                    const resetAndHide = () => {
+                        this.resetPhase4(); // Reset the UI elements so the user can drag again
+                        this.hideMessage();
+                        // Restore default button action after reset is scheduled
+                        document.getElementById('message-button').onclick = () => App.hideMessage(); 
+                    };
+
+                    // Set custom action for the "Continue" button on failure to trigger the reset
+                    document.getElementById('message-button').onclick = resetAndHide;
+
+                    this.showMessage("Sequence Error", `You have ${correctCount}/3 segments in the correct order. The non-linear Phad arrangement is tricky! Review the story logic and try again.`, "Continue");
+                    playNote("G3");
+                }
+            },
+
+
+            // --- End Screen ---
+            renderEndScreen() {
+                return `
+                    <h2 class="text-3xl font-bold text-red-700 text-center mb-6">Performance Complete!</h2>
+                    <div class="text-center p-8 bg-yellow-50 rounded-lg shadow-lg">
+                        <p class="text-xl font-semibold text-gray-800">You have successfully performed the Phad Vachan of Pabuji, honoring the sacred storytelling tradition of Rajasthan.</p>
+                        <p class="mt-4 text-gray-700">This interactive artifact demonstrated the complexity of the ritual (Phase 1), the symbolism in the art (Phase 2), the importance of musical accompaniment (Phase 3), and the narrative structure of the epic (Phase 4).</p>
+                        <p class="mt-6 text-sm text-gray-500">Thank you for preserving the underrepresented culture of the Bhopa and Bhopi.</p>
+                        <button onclick="location.reload()" class="mt-8 px-6 py-3 bg-red-600 text-white font-bold rounded-full hover:bg-red-700 transition">
+                            Restart Performance
+                        </button>
+                    </div>
+                `;
+            },
+            
+            // --- UI Management ---
+
+            nextPhase() {
+                // Cleanup current phase event listeners/intervals before advancing
+                if (this.currentPhase === PHASES.RHYTHM) {
+                    // Call the robust stop function
+                    this.stopPhase3(); 
+                }
+
+                // Restore default message button action
+                document.getElementById('message-button').onclick = () => App.hideMessage();
+
+
+                if (this.currentPhase < PHASES.END) {
+                    this.currentPhase++;
+                    this.loadContent();
+                    window.scrollTo(0, 0); // Scroll to top on phase change
+                }
+            },
+
+            showMessage(title, text, buttonText) {
+                document.getElementById('message-title').textContent = title;
+                document.getElementById('message-text').textContent = text;
+                document.getElementById('message-button').textContent = buttonText;
+                document.getElementById('message-box').classList.remove('hidden');
+            },
+
+            hideMessage() {
+                document.getElementById('message-box').classList.add('hidden');
+                // Special case for Phase 3 restart (now handled cleanly by loadContent in setupPhase3)
+                if (this.currentPhase === PHASES.RHYTHM && this.rhythmState.gameActive === false) {
+                     this.loadContent(); 
+                }
+            }
+        };
+
+        window.onload = function() {
+            App.init();
+        }
+    </script>
+</body>
+</html>
